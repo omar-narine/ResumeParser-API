@@ -9,7 +9,11 @@ import json
 
 from parser.routes import parser
 
+import traceback
+import tempfile
+
 app = Flask(__name__)
+app.register_blueprint(parser)
 
 
 swagger = Swagger(
@@ -49,45 +53,51 @@ def upload_to_mongoDB():
     # Possible collision scenario if multiple resumes are uploaded with the same name
     mongodb_client.save_file(input_resume.filename, input_resume)
     
-    return jsonify({"message": input_resume.filename})
+    response = jsonify({"message": input_resume.filename})
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
 
 
 @app.route('/resume/retrieve/<file_name>', methods=["GET", 'POST'])
 def retrieve_resume(file_name):
     mongodb_client.send_file(file_name)
-    
 
-@app.route("/resume-parse", methods = ["GET", "POST"])
-def resume_parse():
-    print("This is working")
-    
+
+# This is a testing endpoint to test the functionality of the parser endpoint as I continue to build it out
+@app.route("/testing-endpoint", methods=["GET", "POST"])
+def test_endpoint():
     try:
-        resume = request.files["file"]
-        resume_contents = resume.read()
+        print(request.files)
+        resume = request.files["resume"]
+        resume_contents =  resume.stream.read().decode("utf8")
+        print(request.form)
         keyword = request.form["keyword"]
-    except KeyError:
-        return jsonify({"error": "Missing 'file' or 'keyword' in request"}), 400
-    
-    #resume = request.files["file"]
-    #resume_contents = resume.read()
-    #keyword = request.form["keyword"]
- 
-    resume_file = open(resume_contents, "r", encoding="utf8")
- 
-    keyword_counter = 0
-    text = resume_file.readline()
-    
-    print("This is still working")
-    
-    for text_line in text:
-        keyword_counter += text_line.count(keyword)
+        print(keyword)
+        
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding="utf8") as f:
+            f.write(resume_contents)
+            resume_file_name = f.name
+        
+        resume_file = open(resume_file_name, "r", encoding="utf8")
+        
+        keyword_counter = 0
+        text = resume_file.readlines()
+        for text_line in text:
+            #print(text_line)
+            keyword_counter += text_line.lower().count(keyword.lower())         
+            
+        response = jsonify({"message": keyword_counter})
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
      
-    print(keyword_counter)    
-    # return jsonify({"message": keyword_counter})
+        return response 
     
-    response = jsonify({"status": "OK"})
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    return response
+    except :
+       traceback.print_exc()
+       
+       response = jsonify({"message": "ERROR"})
+       response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+       return response 
+    
 
 @app.route('/parser-health')
 def parser_health():
